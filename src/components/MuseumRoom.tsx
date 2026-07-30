@@ -155,63 +155,73 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
     }
   }, [activeIdx]);
 
-  // TTS (Text-to-Speech) Logic via Google Translate (гарантирует казахский голос на любой ОС)
+  // TTS (Text-to-Speech) Logic via Web Speech API
   useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    
     const currentStand = stands[activeIdx];
     if (!currentStand) return;
     
-    if (ttsAudioRef.current) {
-      ttsAudioRef.current.pause();
-      ttsAudioRef.current = null;
-    }
-    
-    const textToSpeak = `${currentStand.title}. ${currentStand.body}`;
-    const chunks = textToSpeak.match(/[^.!?]+[.!?]*|.+/g) || [textToSpeak];
-    let isCancelled = false;
-    
-    const playChunks = async (idx = 0) => {
-      if (isCancelled || idx >= chunks.length) return;
+    const setVoiceAndSpeak = () => {
+      window.speechSynthesis.cancel(); // Reset any stuck speech queue
       
-      let t = chunks[idx].trim();
-      if (!t) {
-        playChunks(idx + 1);
-        return;
+      const textToSpeak = `${currentStand.title}. ${currentStand.body}`;
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      
+      const voices = window.speechSynthesis.getVoices();
+      
+      // 1. Ищем казахский голос
+      let selectedVoice = voices.find(v => {
+        const lang = v.lang.toLowerCase();
+        const name = v.name.toLowerCase();
+        return lang.startsWith("kk") || 
+               lang.includes("kaz") || 
+               name.includes("kazakh") || 
+               name.includes("казах") || 
+               name.includes("қазақ");
+      });
+      
+      // 2. Если казахского физически нет в ОС (например, Ubuntu по умолчанию), берем русский для кириллицы
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang.toLowerCase().startsWith("ru"));
       }
       
-      if (t.length > 200) {
-        t = t.substring(0, 199);
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        utterance.lang = selectedVoice.lang;
+      } else {
+        utterance.lang = "kk-KZ";
       }
       
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=kk&q=${encodeURIComponent(t)}`;
-      const audio = new Audio(url);
-      ttsAudioRef.current = audio;
-      
-      audio.onended = () => {
-        if (!isCancelled) playChunks(idx + 1);
-      };
-      
-      try {
-        await audio.play();
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          console.error("TTS Audio play failed:", err);
-        }
-      }
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
     };
 
     const timeout = setTimeout(() => {
-      playChunks();
-    }, 600); // Ждем пока закончится анимация
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = setVoiceAndSpeak;
+      } else {
+        setVoiceAndSpeak();
+      }
+    }, 600);
     
     return () => {
-      isCancelled = true;
       clearTimeout(timeout);
-      if (ttsAudioRef.current) {
-        ttsAudioRef.current.pause();
-        ttsAudioRef.current = null;
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+        window.speechSynthesis.cancel();
       }
     };
   }, [activeIdx, stands]);
+
+  // Ensure speech is stopped when exiting the museum entirely
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   return (
     <div ref={containerRef} className="museum-overlay">
