@@ -154,6 +154,55 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
     }
   }, [activeIdx]);
 
+  // TTS (Text-to-Speech) Logic
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    
+    window.speechSynthesis.cancel();
+    
+    const currentStand = stands[activeIdx];
+    if (!currentStand) return;
+    
+    // Wait for voices to load if they haven't yet
+    const setVoiceAndSpeak = () => {
+      const textToSpeak = `${currentStand.title}. ${currentStand.body}`;
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = "kk-KZ";
+      
+      const voices = window.speechSynthesis.getVoices();
+      const kkVoice = voices.find(v => v.lang.startsWith("kk") || v.lang.startsWith("kz"));
+      if (kkVoice) {
+        utterance.voice = kkVoice;
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    };
+
+    const timeout = setTimeout(() => {
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = setVoiceAndSpeak;
+      } else {
+        setVoiceAndSpeak();
+      }
+    }, 600); // Wait for transition to finish
+    
+    return () => {
+      clearTimeout(timeout);
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [activeIdx, stands]);
+
+  // Ensure speech is stopped when exiting the museum entirely
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   return (
     <div ref={containerRef} className="museum-overlay">
