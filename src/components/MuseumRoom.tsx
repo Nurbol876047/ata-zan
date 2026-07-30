@@ -181,15 +181,11 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
                name.includes("қазақ");
       });
       
-      // 2. Если казахского физически нет в ОС (например, Ubuntu по умолчанию), берем русский для кириллицы
-      if (!selectedVoice) {
-        selectedVoice = voices.find(v => v.lang.toLowerCase().startsWith("ru"));
-      }
-      
       if (selectedVoice) {
         utterance.voice = selectedVoice;
         utterance.lang = selectedVoice.lang;
       } else {
+        // Жестко требуем казахскую языковую модель у браузера/ОС
         utterance.lang = "kk-KZ";
       }
       
