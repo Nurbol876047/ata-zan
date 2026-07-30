@@ -24,7 +24,6 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIdx, setActiveIdx] = useState(0);
-  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Entrance animation
   useEffect(() => {
@@ -43,14 +42,13 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
   
   // 1) Инициализируем аудио объекты только один раз (вне React DOM)
   useEffect(() => {
-    audioRefs.current = stands.map(stand => {
-      if (stand.audioSrc) {
-        const audio = new Audio(stand.audioSrc);
-        audio.loop = true;
-        audio.volume = 0;
-        return audio;
-      }
-      return null;
+    audioRefs.current = stands.map((stand, idx) => {
+      // Ищем заранее сгенерированное аудио для этого стенда
+      const src = stand.audioSrc || `/audio/${id}_${idx}.mp3`;
+      const audio = new Audio(src);
+      audio.loop = false; // Голос не должен зацикливаться
+      audio.volume = 0;
+      return audio;
     });
 
     return () => {
@@ -62,22 +60,27 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
         }
       });
     };
-  }, [stands]);
+  }, [stands, id]);
 
-  // 2) Управляем громкостью и воспроизведением при свайпе
+  // 2) Управляем воспроизведением при свайпе
   useEffect(() => {
     audioRefs.current.forEach((audio, idx) => {
       if (!audio) return;
       if (idx === activeIdx) {
         gsap.killTweensOf(audio);
-        const p = audio.play();
-        if (p !== undefined) {
-          p.catch(() => {}); // Игнорируем AbortError если пользователь быстро свайпает
-        }
-        gsap.to(audio, { volume: 1, duration: 0.5 });
+        audio.currentTime = 0; // Начинаем с начала
+        audio.volume = 1;      // Сразу максимальная громкость, чтобы не съесть первые слова
+        
+        // Добавляем небольшую задержку, чтобы анимация свайпа успела пройти
+        setTimeout(() => {
+          const p = audio.play();
+          if (p !== undefined) {
+            p.catch(() => {}); // Игнорируем AbortError если пользователь быстро свайпает
+          }
+        }, 400);
       } else {
         gsap.killTweensOf(audio);
-        gsap.to(audio, { volume: 0, duration: 0.5, onComplete: () => {
+        gsap.to(audio, { volume: 0, duration: 0.3, onComplete: () => {
           audio.pause();
         }});
       }
@@ -155,69 +158,7 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
     }
   }, [activeIdx]);
 
-  // TTS (Text-to-Speech) Logic via Web Speech API
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    
-    const currentStand = stands[activeIdx];
-    if (!currentStand) return;
-    
-    const setVoiceAndSpeak = () => {
-      window.speechSynthesis.cancel(); // Reset any stuck speech queue
-      
-      const textToSpeak = `${currentStand.title}. ${currentStand.body}`;
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      
-      const voices = window.speechSynthesis.getVoices();
-      
-      // 1. Ищем казахский голос
-      let selectedVoice = voices.find(v => {
-        const lang = v.lang.toLowerCase();
-        const name = v.name.toLowerCase();
-        return lang.startsWith("kk") || 
-               lang.includes("kaz") || 
-               name.includes("kazakh") || 
-               name.includes("казах") || 
-               name.includes("қазақ");
-      });
-      
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = selectedVoice.lang;
-      } else {
-        // Жестко требуем казахскую языковую модель у браузера/ОС
-        utterance.lang = "kk-KZ";
-      }
-      
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
-    };
 
-    const timeout = setTimeout(() => {
-      if (window.speechSynthesis.getVoices().length === 0) {
-        window.speechSynthesis.onvoiceschanged = setVoiceAndSpeak;
-      } else {
-        setVoiceAndSpeak();
-      }
-    }, 600);
-    
-    return () => {
-      clearTimeout(timeout);
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.onvoiceschanged = null;
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [activeIdx, stands]);
-
-  // Ensure speech is stopped when exiting the museum entirely
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
 
   return (
     <div ref={containerRef} className="museum-overlay">

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <audio id="audio" controls referrerpolicy="no-referrer"></audio>
+  <button onclick="playTTS()">Play</button>
+  <script>
+    function playTTS() {
+      const a = document.getElementById('audio');
+      a.src = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=kk&q=' + encodeURIComponent('Сәлем');
+      a.play().catch(console.error);
+    }
+  </script>
+</body>
+</html>

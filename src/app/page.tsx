@@ -15,6 +15,7 @@ import {
   PowerShift,
   DonutReveal,
 } from "@/components/RevealEffects";
+import { QuizSection } from "@/components/QuizSection";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -485,6 +486,8 @@ function PageInner() {
           </div>
         </div>
       </section>
+
+      <QuizSection />
 
       {/* FOOTER */}
       <footer className="site-footer">
