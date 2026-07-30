@@ -158,23 +158,33 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     
-    window.speechSynthesis.cancel();
-    
     const currentStand = stands[activeIdx];
     if (!currentStand) return;
     
-    // Wait for voices to load if they haven't yet
     const setVoiceAndSpeak = () => {
+      window.speechSynthesis.cancel(); // Reset any stuck speech queue
+      
       const textToSpeak = `${currentStand.title}. ${currentStand.body}`;
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = "kk-KZ";
       
       const voices = window.speechSynthesis.getVoices();
-      const kkVoice = voices.find(v => v.lang.startsWith("kk") || v.lang.startsWith("kz"));
-      if (kkVoice) {
-        utterance.voice = kkVoice;
+      // 1. Ищем казахский голос
+      let selectedVoice = voices.find(v => v.lang.startsWith("kk") || v.lang.startsWith("kz"));
+      
+      // 2. Если нет казахского, ищем русский (так как текст на кириллице, русский голос сможет его прочитать)
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang.startsWith("ru"));
       }
       
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        utterance.lang = selectedVoice.lang;
+      } else {
+        // Дефолтный фоллбэк
+        utterance.lang = "ru-RU"; 
+      }
+      
+      utterance.rate = 0.9; // Чуть медленнее для выразительности
       window.speechSynthesis.speak(utterance);
     };
 
@@ -184,7 +194,7 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
       } else {
         setVoiceAndSpeak();
       }
-    }, 600); // Wait for transition to finish
+    }, 600); // Ждем пока закончится анимация
     
     return () => {
       clearTimeout(timeout);
