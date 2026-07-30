@@ -168,20 +168,24 @@ export function MuseumRoom({ id, stands, onClose, sourceRect }: MuseumRoomProps)
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       
       const voices = window.speechSynthesis.getVoices();
-      // 1. Ищем казахский голос
-      let selectedVoice = voices.find(v => v.lang.startsWith("kk") || v.lang.startsWith("kz"));
       
-      // 2. Если нет казахского, ищем русский (так как текст на кириллице, русский голос сможет его прочитать)
-      if (!selectedVoice) {
-        selectedVoice = voices.find(v => v.lang.startsWith("ru"));
-      }
+      // 1. Максимально агрессивный поиск казахского голоса
+      let selectedVoice = voices.find(v => {
+        const lang = v.lang.toLowerCase();
+        const name = v.name.toLowerCase();
+        return lang.startsWith("kk") || 
+               lang.includes("kaz") || 
+               name.includes("kazakh") || 
+               name.includes("казах") || 
+               name.includes("қазақ");
+      });
       
       if (selectedVoice) {
         utterance.voice = selectedVoice;
         utterance.lang = selectedVoice.lang;
       } else {
-        // Дефолтный фоллбэк
-        utterance.lang = "ru-RU"; 
+        // Жестко требуем казахский язык у браузера
+        utterance.lang = "kk-KZ";
       }
       
       utterance.rate = 0.9; // Чуть медленнее для выразительности
