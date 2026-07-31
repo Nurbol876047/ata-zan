@@ -16,6 +16,7 @@ export default function Constitution() {
   const [playingQaId, setPlayingQaId] = useState<number | null>(null);
   const playingArticleNumRef = useRef<number | null>(null);
   const playingQaIdRef = useRef<number | null>(null);
+  const utteranceRef = useRef<any>(null); // Keep reference to prevent garbage collection in Chrome
 
   const updatePlayingArticle = (id: number | null) => {
     setPlayingArticleNum(id);
@@ -78,10 +79,11 @@ export default function Constitution() {
       }
 
       const utterance = new SpeechSynthesisUtterance(text);
+      utteranceRef.current = utterance; // Prevent GC bug in Chrome
       utterance.lang = 'kk-KZ'; // Kazakh
       utterance.rate = 1.0;
       
-      // Try to find a Kazakh voice if available, otherwise browser will use default
+      // Try to find a Kazakh voice if available
       const voices = window.speechSynthesis.getVoices();
       const kkVoice = voices.find(v => v.lang.includes('kk') || v.lang.includes('kz'));
       if (kkVoice) utterance.voice = kkVoice;
@@ -97,7 +99,10 @@ export default function Constitution() {
         else updatePlayingArticle(null);
       };
       
-      window.speechSynthesis.speak(utterance);
+      // Chrome bug: speak() immediately after cancel() might get cancelled too
+      setTimeout(() => {
+        window.speechSynthesis.speak(utterance);
+      }, 50);
     } catch (err) {
       console.error(err);
       if (isQa) updatePlayingQa(null);
