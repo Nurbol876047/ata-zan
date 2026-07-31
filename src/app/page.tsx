@@ -16,6 +16,7 @@ import {
   DonutReveal,
 } from "@/components/RevealEffects";
 import { QuizSection } from "@/components/QuizSection";
+import Constitution from "@/components/Constitution";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -489,6 +490,13 @@ function PageInner() {
 
       <QuizSection />
 
+      <section className="constitution-chat-section relative z-10 w-full" aria-label="Конституция чат бөлімі">
+        <div className="section-header pt-12 pb-6 text-center">
+          <h2 className="section-title text-4xl font-bold">Конституция модулі</h2>
+          <p className="text-gray-500 mt-2">ИИ-көмекшісімен дауыстық чат</p>
+        </div>
+        <Constitution />
+      </section>
       {/* FOOTER */}
       <footer className="site-footer">
         <p className="footer-note">
