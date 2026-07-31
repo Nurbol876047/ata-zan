@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Send, Play, Pause, AlertCircle, Bot, User, Loader2, BookOpen } from 'lucide-react';
 import constitutionData from '../data/constitution.json';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { EdgeTTSClient, OUTPUT_FORMAT } from 'edge-tts-client';
 
 interface ChatMessage {
   role: 'user' | 'ai';
@@ -60,92 +59,81 @@ export default function Constitution() {
     }
   }, [chatLog, isProcessing]);
 
-  const playClientTTS = async (text: string, isQa: boolean, id: number) => {
+  const playTTS = (text: string, articleNum: number) => {
     try {
-      if (isQa) {
-        if (qaAudioRef.current) {
-          qaAudioRef.current.pause();
-          qaAudioRef.current.currentTime = 0;
-        }
-        if (playingQaIdRef.current === id) {
-          updatePlayingQa(null);
-          return;
-        }
-        updatePlayingQa(id);
-      } else {
+      if (qaAudioRef.current) {
+        qaAudioRef.current.pause();
+        qaAudioRef.current.currentTime = 0;
+      }
+      
+      if (playingArticleNumRef.current === articleNum) {
         if (audioRef.current) {
           audioRef.current.pause();
-          audioRef.current.currentTime = 0;
-        }
-        if (playingArticleNumRef.current === id) {
           updatePlayingArticle(null);
-          return;
         }
-        updatePlayingArticle(id);
+        return;
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
       }
 
-      const client = new EdgeTTSClient();
-      await client.setMetadata('kk-KZ-AigulNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      updatePlayingArticle(articleNum);
+      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
+      audioRef.current = audio;
+
+      audio.onended = () => updatePlayingArticle(null);
+      audio.onerror = () => {
+        console.error('TTS playback error');
+        updatePlayingArticle(null);
+      };
       
-      const stream = client.toStream(text);
-      const chunks: any[] = [];
-      
-      stream.on('data', (chunk: any) => {
-        chunks.push(new Uint8Array(chunk));
-      });
-      
-      stream.on('end', () => {
-        client.close();
-        
-        if (isQa && playingQaIdRef.current !== id) return;
-        if (!isQa && playingArticleNumRef.current !== id) return;
-        
-        const blob = new Blob(chunks as BlobPart[], { type: 'audio/mp3' });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        
-        audio.onended = () => {
-          if (isQa) updatePlayingQa(null);
-          else updatePlayingArticle(null);
-          URL.revokeObjectURL(url);
-        };
-        
-        audio.onerror = () => {
-          console.error('TTS playback error');
-          if (isQa) updatePlayingQa(null);
-          else updatePlayingArticle(null);
-          URL.revokeObjectURL(url);
-        };
-        
-        if (isQa) {
-          qaAudioRef.current = audio;
-        } else {
-          audioRef.current = audio;
-        }
-        
-        audio.play().catch(err => {
-          console.error('Autoplay error', err);
-          if (isQa) updatePlayingQa(null);
-          else updatePlayingArticle(null);
-        });
-      });
-      
-      stream.on('close', () => {
-        client.close();
+      audio.play().catch(err => {
+        console.error('TTS Play error:', err);
+        updatePlayingArticle(null);
       });
     } catch (err) {
-      console.error('TTS error', err);
-      if (isQa) updatePlayingQa(null);
-      else updatePlayingArticle(null);
+      console.error(err);
+      updatePlayingArticle(null);
     }
   };
 
-  const playTTS = (text: string, articleNum: number) => {
-    playClientTTS(text, false, articleNum);
-  };
-
   const playQaTTS = (text: string, msgIndex: number) => {
-    playClientTTS(text, true, msgIndex);
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      if (playingQaIdRef.current === msgIndex) {
+        if (qaAudioRef.current) {
+          qaAudioRef.current.pause();
+          updatePlayingQa(null);
+        }
+        return;
+      }
+      if (qaAudioRef.current) {
+        qaAudioRef.current.pause();
+        qaAudioRef.current.currentTime = 0;
+      }
+
+      updatePlayingQa(msgIndex);
+      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
+      qaAudioRef.current = audio;
+
+      audio.onended = () => updatePlayingQa(null);
+      audio.onerror = () => {
+        console.error('QA TTS playback error');
+        updatePlayingQa(null);
+      };
+
+      audio.play().catch(err => {
+        console.error('QA TTS Play error:', err);
+        updatePlayingQa(null);
+      });
+    } catch (err) {
+      console.error(err);
+      updatePlayingQa(null);
+    }
   };
 
   const startRecording = async () => {
