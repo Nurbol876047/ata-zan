@@ -15,7 +15,18 @@ export default function Constitution() {
   const [selectedSectionId, setSelectedSectionId] = useState(constitutionData.sections[0].id);
   const [playingArticleNum, setPlayingArticleNum] = useState<number | null>(null);
   const [playingQaId, setPlayingQaId] = useState<number | null>(null);
-  
+  const playingArticleNumRef = useRef<number | null>(null);
+  const playingQaIdRef = useRef<number | null>(null);
+
+  const updatePlayingArticle = (id: number | null) => {
+    setPlayingArticleNum(id);
+    playingArticleNumRef.current = id;
+  };
+
+  const updatePlayingQa = (id: number | null) => {
+    setPlayingQaId(id);
+    playingQaIdRef.current = id;
+  };
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('');
@@ -56,21 +67,21 @@ export default function Constitution() {
           qaAudioRef.current.pause();
           qaAudioRef.current.currentTime = 0;
         }
-        if (playingQaId === id) {
-          setPlayingQaId(null);
+        if (playingQaIdRef.current === id) {
+          updatePlayingQa(null);
           return;
         }
-        setPlayingQaId(id);
+        updatePlayingQa(id);
       } else {
         if (audioRef.current) {
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
         }
-        if (playingArticleNum === id) {
-          setPlayingArticleNum(null);
+        if (playingArticleNumRef.current === id) {
+          updatePlayingArticle(null);
           return;
         }
-        setPlayingArticleNum(id);
+        updatePlayingArticle(id);
       }
 
       const client = new EdgeTTSClient();
@@ -84,26 +95,25 @@ export default function Constitution() {
       });
       
       stream.on('end', () => {
-        client.close(); // Important: close WebSocket
+        client.close();
         
-        // Check if user cancelled while loading
-        if (isQa && playingQaId !== id) return;
-        if (!isQa && playingArticleNum !== id) return;
+        if (isQa && playingQaIdRef.current !== id) return;
+        if (!isQa && playingArticleNumRef.current !== id) return;
         
         const blob = new Blob(chunks as BlobPart[], { type: 'audio/mp3' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         
         audio.onended = () => {
-          if (isQa) setPlayingQaId(null);
-          else setPlayingArticleNum(null);
+          if (isQa) updatePlayingQa(null);
+          else updatePlayingArticle(null);
           URL.revokeObjectURL(url);
         };
         
         audio.onerror = () => {
           console.error('TTS playback error');
-          if (isQa) setPlayingQaId(null);
-          else setPlayingArticleNum(null);
+          if (isQa) updatePlayingQa(null);
+          else updatePlayingArticle(null);
           URL.revokeObjectURL(url);
         };
         
@@ -115,8 +125,8 @@ export default function Constitution() {
         
         audio.play().catch(err => {
           console.error('Autoplay error', err);
-          if (isQa) setPlayingQaId(null);
-          else setPlayingArticleNum(null);
+          if (isQa) updatePlayingQa(null);
+          else updatePlayingArticle(null);
         });
       });
       
@@ -125,8 +135,8 @@ export default function Constitution() {
       });
     } catch (err) {
       console.error('TTS error', err);
-      if (isQa) setPlayingQaId(null);
-      else setPlayingArticleNum(null);
+      if (isQa) updatePlayingQa(null);
+      else updatePlayingArticle(null);
     }
   };
 
