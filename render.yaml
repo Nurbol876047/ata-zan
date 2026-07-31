@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ata-zan-voice
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_GEMINI_API_KEY
+        sync: false

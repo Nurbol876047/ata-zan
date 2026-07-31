@@ -16,7 +16,9 @@ export default function Constitution() {
   const [playingQaId, setPlayingQaId] = useState<number | null>(null);
   const playingArticleNumRef = useRef<number | null>(null);
   const playingQaIdRef = useRef<number | null>(null);
-  const utteranceRef = useRef<any>(null); // Keep reference to prevent garbage collection in Chrome
+  
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const qaAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const updatePlayingArticle = (id: number | null) => {
     setPlayingArticleNum(id);
@@ -58,64 +60,81 @@ export default function Constitution() {
     }
   }, [chatLog, isProcessing]);
 
-  const playNativeTTS = (text: string, isQa: boolean, id: number) => {
+  const playTTS = (text: string, articleNum: number) => {
     try {
-      window.speechSynthesis.cancel(); // Stop any current speech
+      if (qaAudioRef.current) {
+        qaAudioRef.current.pause();
+        qaAudioRef.current.currentTime = 0;
+      }
       
-      if (isQa) {
-        if (playingQaIdRef.current === id) {
-          updatePlayingQa(null);
-          return; // Toggle off
-        }
-        updatePlayingArticle(null);
-        updatePlayingQa(id);
-      } else {
-        if (playingArticleNumRef.current === id) {
+      if (playingArticleNumRef.current === articleNum) {
+        if (audioRef.current) {
+          audioRef.current.pause();
           updatePlayingArticle(null);
-          return; // Toggle off
         }
-        updatePlayingQa(null);
-        updatePlayingArticle(id);
+        return;
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
       }
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utteranceRef.current = utterance; // Prevent GC bug in Chrome
-      utterance.lang = 'kk-KZ'; // Kazakh
-      utterance.rate = 1.0;
-      
-      // Try to find a Kazakh voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const kkVoice = voices.find(v => v.lang.includes('kk') || v.lang.includes('kz'));
-      if (kkVoice) utterance.voice = kkVoice;
+      updatePlayingArticle(articleNum);
+      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
+      audioRef.current = audio;
 
-      utterance.onend = () => {
-        if (isQa) updatePlayingQa(null);
-        else updatePlayingArticle(null);
-      };
-
-      utterance.onerror = (e) => {
-        console.error('TTS playback error:', e);
-        if (isQa) updatePlayingQa(null);
-        else updatePlayingArticle(null);
+      audio.onended = () => updatePlayingArticle(null);
+      audio.onerror = () => {
+        console.error('TTS playback error');
+        updatePlayingArticle(null);
       };
       
-      // Chrome bug: speak() immediately after cancel() might get cancelled too
-      setTimeout(() => {
-        window.speechSynthesis.speak(utterance);
-      }, 50);
+      audio.play().catch(err => {
+        console.error('TTS Play error:', err);
+        updatePlayingArticle(null);
+      });
     } catch (err) {
       console.error(err);
-      if (isQa) updatePlayingQa(null);
-      else updatePlayingArticle(null);
+      updatePlayingArticle(null);
     }
   };
 
-  const playTTS = (text: string, articleNum: number) => {
-    playNativeTTS(text, false, articleNum);
-  };
-
   const playQaTTS = (text: string, msgIndex: number) => {
-    playNativeTTS(text, true, msgIndex);
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      if (playingQaIdRef.current === msgIndex) {
+        if (qaAudioRef.current) {
+          qaAudioRef.current.pause();
+          updatePlayingQa(null);
+        }
+        return;
+      }
+      if (qaAudioRef.current) {
+        qaAudioRef.current.pause();
+        qaAudioRef.current.currentTime = 0;
+      }
+
+      updatePlayingQa(msgIndex);
+      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
+      qaAudioRef.current = audio;
+
+      audio.onended = () => updatePlayingQa(null);
+      audio.onerror = () => {
+        console.error('QA TTS playback error');
+        updatePlayingQa(null);
+      };
+
+      audio.play().catch(err => {
+        console.error('QA TTS Play error:', err);
+        updatePlayingQa(null);
+      });
+    } catch (err) {
+      console.error(err);
+      updatePlayingQa(null);
+    }
   };
 
   const startRecording = async () => {
