@@ -52,14 +52,20 @@ export default function Constitution() {
   const playClientTTS = async (text: string, isQa: boolean, id: number) => {
     try {
       if (isQa) {
-        if (qaAudioRef.current) qaAudioRef.current.pause();
+        if (qaAudioRef.current) {
+          qaAudioRef.current.pause();
+          qaAudioRef.current.currentTime = 0;
+        }
         if (playingQaId === id) {
           setPlayingQaId(null);
           return;
         }
         setPlayingQaId(id);
       } else {
-        if (audioRef.current) audioRef.current.pause();
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
         if (playingArticleNum === id) {
           setPlayingArticleNum(null);
           return;
@@ -78,6 +84,12 @@ export default function Constitution() {
       });
       
       stream.on('end', () => {
+        client.close(); // Important: close WebSocket
+        
+        // Check if user cancelled while loading
+        if (isQa && playingQaId !== id) return;
+        if (!isQa && playingArticleNum !== id) return;
+        
         const blob = new Blob(chunks as BlobPart[], { type: 'audio/mp3' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
@@ -92,6 +104,7 @@ export default function Constitution() {
           console.error('TTS playback error');
           if (isQa) setPlayingQaId(null);
           else setPlayingArticleNum(null);
+          URL.revokeObjectURL(url);
         };
         
         if (isQa) {
@@ -101,10 +114,14 @@ export default function Constitution() {
         }
         
         audio.play().catch(err => {
-          console.error('Play error', err);
+          console.error('Autoplay error', err);
           if (isQa) setPlayingQaId(null);
           else setPlayingArticleNum(null);
         });
+      });
+      
+      stream.on('close', () => {
+        client.close();
       });
     } catch (err) {
       console.error('TTS error', err);
