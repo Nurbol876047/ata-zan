@@ -37,8 +37,6 @@ export default function Constitution() {
   }]);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const qaAudioRef = useRef<HTMLAudioElement | null>(null);
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   
   // Recording refs
@@ -59,81 +57,60 @@ export default function Constitution() {
     }
   }, [chatLog, isProcessing]);
 
-  const playTTS = (text: string, articleNum: number) => {
+  const playNativeTTS = (text: string, isQa: boolean, id: number) => {
     try {
-      if (qaAudioRef.current) {
-        qaAudioRef.current.pause();
-        qaAudioRef.current.currentTime = 0;
-      }
+      window.speechSynthesis.cancel(); // Stop any current speech
       
-      if (playingArticleNumRef.current === articleNum) {
-        if (audioRef.current) {
-          audioRef.current.pause();
-          updatePlayingArticle(null);
+      if (isQa) {
+        if (playingQaIdRef.current === id) {
+          updatePlayingQa(null);
+          return; // Toggle off
         }
-        return;
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-
-      updatePlayingArticle(articleNum);
-      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
-      audioRef.current = audio;
-
-      audio.onended = () => updatePlayingArticle(null);
-      audio.onerror = () => {
-        console.error('TTS playback error');
         updatePlayingArticle(null);
+        updatePlayingQa(id);
+      } else {
+        if (playingArticleNumRef.current === id) {
+          updatePlayingArticle(null);
+          return; // Toggle off
+        }
+        updatePlayingQa(null);
+        updatePlayingArticle(id);
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'kk-KZ'; // Kazakh
+      utterance.rate = 1.0;
+      
+      // Try to find a Kazakh voice if available, otherwise browser will use default
+      const voices = window.speechSynthesis.getVoices();
+      const kkVoice = voices.find(v => v.lang.includes('kk') || v.lang.includes('kz'));
+      if (kkVoice) utterance.voice = kkVoice;
+
+      utterance.onend = () => {
+        if (isQa) updatePlayingQa(null);
+        else updatePlayingArticle(null);
+      };
+
+      utterance.onerror = (e) => {
+        console.error('TTS playback error:', e);
+        if (isQa) updatePlayingQa(null);
+        else updatePlayingArticle(null);
       };
       
-      audio.play().catch(err => {
-        console.error('TTS Play error:', err);
-        updatePlayingArticle(null);
-      });
+      window.speechSynthesis.speak(utterance);
     } catch (err) {
       console.error(err);
-      updatePlayingArticle(null);
+      if (isQa) updatePlayingQa(null);
+      else updatePlayingArticle(null);
     }
   };
 
+  const playTTS = (text: string, articleNum: number) => {
+    playNativeTTS(text, false, articleNum);
+  };
+
   const playQaTTS = (text: string, msgIndex: number) => {
-    try {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-      if (playingQaIdRef.current === msgIndex) {
-        if (qaAudioRef.current) {
-          qaAudioRef.current.pause();
-          updatePlayingQa(null);
-        }
-        return;
-      }
-      if (qaAudioRef.current) {
-        qaAudioRef.current.pause();
-        qaAudioRef.current.currentTime = 0;
-      }
-
-      updatePlayingQa(msgIndex);
-      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
-      qaAudioRef.current = audio;
-
-      audio.onended = () => updatePlayingQa(null);
-      audio.onerror = () => {
-        console.error('QA TTS playback error');
-        updatePlayingQa(null);
-      };
-
-      audio.play().catch(err => {
-        console.error('QA TTS Play error:', err);
-        updatePlayingQa(null);
-      });
-    } catch (err) {
-      console.error(err);
-      updatePlayingQa(null);
-    }
+    playNativeTTS(text, true, msgIndex);
   };
 
   const startRecording = async () => {
