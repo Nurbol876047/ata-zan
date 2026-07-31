@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Send, Play, Pause, AlertCircle, Bot, User, Loader2, BookOpen } from 'lucide-react';
 import constitutionData from '../data/constitution.json';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { EdgeTTSClient, OUTPUT_FORMAT } from 'edge-tts-client';
 
 interface ChatMessage {
   role: 'user' | 'ai';
@@ -48,71 +49,76 @@ export default function Constitution() {
     }
   }, [chatLog, isProcessing]);
 
-  const playTTS = (text: string, articleNum: number) => {
+  const playClientTTS = async (text: string, isQa: boolean, id: number) => {
     try {
-      if (qaAudioRef.current) qaAudioRef.current.pause();
-      
-      if (playingArticleNum === articleNum) {
-        if (audioRef.current) {
-          audioRef.current.pause();
-          setPlayingArticleNum(null);
+      if (isQa) {
+        if (qaAudioRef.current) qaAudioRef.current.pause();
+        if (playingQaId === id) {
+          setPlayingQaId(null);
+          return;
         }
-        return;
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
+        setPlayingQaId(id);
+      } else {
+        if (audioRef.current) audioRef.current.pause();
+        if (playingArticleNum === id) {
+          setPlayingArticleNum(null);
+          return;
+        }
+        setPlayingArticleNum(id);
       }
 
-      setPlayingArticleNum(articleNum);
-      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
-      audioRef.current = audio;
-
-      audio.onended = () => setPlayingArticleNum(null);
-      audio.onerror = () => {
-        console.error('TTS playback error');
-        setPlayingArticleNum(null);
-      };
+      const client = new EdgeTTSClient();
+      await client.setMetadata('kk-KZ-AigulNeural', OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       
-      audio.play().catch(err => {
-        console.error('TTS Play error:', err);
-        setPlayingArticleNum(null);
+      const stream = client.toStream(text);
+      const chunks: any[] = [];
+      
+      stream.on('data', (chunk: any) => {
+        chunks.push(new Uint8Array(chunk));
+      });
+      
+      stream.on('end', () => {
+        const blob = new Blob(chunks as BlobPart[], { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        
+        audio.onended = () => {
+          if (isQa) setPlayingQaId(null);
+          else setPlayingArticleNum(null);
+          URL.revokeObjectURL(url);
+        };
+        
+        audio.onerror = () => {
+          console.error('TTS playback error');
+          if (isQa) setPlayingQaId(null);
+          else setPlayingArticleNum(null);
+        };
+        
+        if (isQa) {
+          qaAudioRef.current = audio;
+        } else {
+          audioRef.current = audio;
+        }
+        
+        audio.play().catch(err => {
+          console.error('Play error', err);
+          if (isQa) setPlayingQaId(null);
+          else setPlayingArticleNum(null);
+        });
       });
     } catch (err) {
-      console.error(err);
+      console.error('TTS error', err);
+      if (isQa) setPlayingQaId(null);
+      else setPlayingArticleNum(null);
     }
   };
 
+  const playTTS = (text: string, articleNum: number) => {
+    playClientTTS(text, false, articleNum);
+  };
+
   const playQaTTS = (text: string, msgIndex: number) => {
-    try {
-      if (audioRef.current) audioRef.current.pause();
-      if (playingQaId === msgIndex) {
-        if (qaAudioRef.current) {
-          qaAudioRef.current.pause();
-          setPlayingQaId(null);
-        }
-        return;
-      }
-      if (qaAudioRef.current) {
-        qaAudioRef.current.pause();
-      }
-
-      setPlayingQaId(msgIndex);
-      const audio = new Audio('/api/tts?text=' + encodeURIComponent(text));
-      qaAudioRef.current = audio;
-
-      audio.onended = () => setPlayingQaId(null);
-      audio.onerror = () => {
-        console.error('QA TTS playback error');
-        setPlayingQaId(null);
-      };
-
-      audio.play().catch(err => {
-        console.error('QA TTS Play error:', err);
-        setPlayingQaId(null);
-      });
-    } catch (err) {
-      console.error(err);
-    }
+    playClientTTS(text, true, msgIndex);
   };
 
   const startRecording = async () => {
