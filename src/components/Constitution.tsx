@@ -43,10 +43,7 @@ export default function Constitution() {
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   
   // Recording refs
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioChunksRef = useRef<Float32Array[]>([]);
+  const recognitionRef = useRef<any>(null);
 
   // Initialize Gemini
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
@@ -137,122 +134,63 @@ export default function Constitution() {
     }
   };
 
-  const startRecording = async () => {
+  const startRecording = () => {
     try {
       setErrorMsg('');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
-
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      scriptProcessorRef.current = processor;
-
-      audioChunksRef.current = [];
-
-      processor.onaudioprocess = (e) => {
-        const channelData = e.inputBuffer.getChannelData(0);
-        audioChunksRef.current.push(new Float32Array(channelData));
-      };
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-      setIsRecording(true);
-      setProcessingStatus('Дауыс жазылуда...');
-    } catch (err: any) {
-      console.error('Microphone access error:', err);
-      setErrorMsg('Микрофонға рұқсат берілмеген.');
-    }
-  };
-
-  const stopRecordingAndTranscribe = async () => {
-    try {
-      setIsRecording(false);
-      setIsProcessing(true);
-      setProcessingStatus('Сөзіңіз мәтінге айналдырылуда...');
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       
-      if (scriptProcessorRef.current) scriptProcessorRef.current.disconnect();
-      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      if (audioContextRef.current) await audioContextRef.current.close();
-
-      const chunks = audioChunksRef.current;
-      if (chunks.length === 0) {
-        setIsProcessing(false);
+      if (!SpeechRecognition) {
+        setErrorMsg('Браузеріңіз дауыс тануды қолдамайды. Google Chrome пайдаланыңыз.');
         return;
       }
 
-      const totalLength = chunks.reduce((acc, val) => acc + val.length, 0);
-      const combined = new Float32Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      const buffer = new ArrayBuffer(44 + combined.length * 2);
-      const view = new DataView(buffer);
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'kk-KZ'; // Қазақ тілі
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
       
-      const writeString = (view: DataView, offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+      recognitionRef.current = recognition;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        setProcessingStatus('Дауыс тыңдалуда...');
       };
 
-      writeString(view, 0, 'RIFF');
-      view.setUint32(4, 36 + combined.length * 2, true);
-      writeString(view, 8, 'WAVE');
-      writeString(view, 12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, 16000, true);
-      view.setUint32(28, 16000 * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeString(view, 36, 'data');
-      view.setUint32(40, combined.length * 2, true);
-
-      let pcmOffset = 44;
-      for (let i = 0; i < combined.length; i++) {
-        let s = Math.max(-1, Math.min(1, combined[i]));
-        view.setInt16(pcmOffset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        pcmOffset += 2;
-      }
-
-      const blob = new Blob([view], { type: 'audio/wav' });
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64data = (reader.result as string).split(',')[1];
-        try {
-          if (!apiKey) {
-            setErrorMsg('Gemini API кілті орнатылмаған');
-            setIsProcessing(false);
-            return;
-          }
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const result = await model.generateContent([
-            'Транскрибируй это аудио в текст. Напиши только распознанный текст. Если аудио пустое или непонятное, напиши ровно одно слово: Ештеңе',
-            { inlineData: { data: base64data, mimeType: 'audio/wav' } }
-          ]);
-          
-          const text = result.response.text().trim();
-          if (text && text.toLowerCase() !== 'ештеңе') {
-            askGemini(text);
-          } else {
-            setErrorMsg('Дауыс анықталмады. Қайта көріңіз.');
-            setIsProcessing(false);
-          }
-        } catch (err: any) {
-          console.error('Transcription error:', err);
-          setErrorMsg('Транскрипция қатесі: ' + err.message);
-          setIsProcessing(false);
+      recognition.onresult = (event: any) => {
+        const text = event.results[0][0].transcript;
+        if (text) {
+          setIsProcessing(true);
+          setProcessingStatus('ИИ жауап іздеуде...');
+          askGemini(text);
+        } else {
+          setErrorMsg('Дауыс анықталмады. Қайта көріңіз.');
         }
       };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        setIsRecording(false);
+        if (event.error !== 'aborted') {
+           setErrorMsg('Дауыс тану қатесі: ' + event.error);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognition.start();
     } catch (err: any) {
-      console.error('Recording stop error:', err);
-      setErrorMsg('Жазуды тоқтату кезінде қате кетті');
-      setIsProcessing(false);
+      console.error('Recording start error:', err);
+      setErrorMsg('Микрофонға қосылу қатесі.');
     }
+  };
+
+  const stopRecordingAndTranscribe = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsRecording(false);
   };
 
   const askGemini = async (overrideText?: string) => {
